@@ -59,20 +59,137 @@ make deploy-prod
 
 - That's all!
 
-## Author
+## Basic Auth - create user and password
+https://docs.nginx.com/nginx/admin-guide/security-controls/configuring-http-basic-authentication/
 
-- [Vic Shóstak](https://github.com/koddr) (aka Koddr).
+To create username-password pairs, use a password file creation utility, for example, apache2-utils
 
-## Article assistance
+Verify that apache2-utils (Debian, Ubuntu) or httpd-tools (RHEL/CentOS/Oracle Linux) is installed.
 
-If you want to say «thank you»:
+```console
+sudo apt-get install apache2-utils   
+```
 
-1. Twit about article [on your Twitter](https://twitter.com/intent/tweet?text=How%20to%20dockerize%20your%20static%20website%20with%20Nginx%2C%20automatic%20renew%20SSL%20for%20domain%20by%20Certbot%20and%20deploy%20it%20to%20DigitalOcean%3F%20https%3A%2F%2Ftwitter.com%2Fintent%2Ftweet%3Ftext%3Dhttps%3A%2F%2Fdev.to%2Fkoddr%2Fhow-to-dockerize-your-static-website-with-nginx-automatic-renew-ssl-for-domain-by-certbot-and-deploy-it-to-digitalocean-4cjc).
-2. Add a GitHub Star and make Fork to this repository.
-3. Donate some money to project author via PayPal: [@paypal.me/koddr](https://paypal.me/koddr?locale.x=en_EN).
-4. Join DigitalOcean at our [referral link](https://m.do.co/c/b41859fa9b6e) (your profit is **$100** and we get $25).
+Create a password file and a first user. Run the htpasswd utility with the -c flag (to create a new file), the file pathname as the first argument, and the username as the second argument:
 
-Thanks for your support! 😘
+```console
+sudo htpasswd -c /etc/apache2/.htpasswd user1 
+```
+
+Press Enter and type the password for user1 at the prompts.
+
+Create additional user-password pairs. Omit the -c flag because the file already exists:
+
+```console
+sudo htpasswd /etc/apache2/.htpasswd user2
+```
+
+You can confirm that the file contains paired usernames and encrypted passwords:
+
+```console
+$ cat /etc/apache2/.htpasswd
+user1:$apr1$/woC1jnP$KAh0SsVn5qeSMjTtn0E9Q0
+user2:$apr1$QdR8fNLT$vbCEEzDj7LyqCMyNpSoBh/
+user3:$apr1$Mr5A0e.U$0j39Hp5FfxRkneklXaMrr/
+```
+
+## Basic Auth - Configuring NGINX and NGINX Plus for HTTP Basic Authentication
+
+Inside a location that you are going to protect, specify the auth_basic directive and give a name to the password-protected area. The name of the area will be shown in the username/password dialog window when asking for credentials:
+
+```console
+location /api {
+    auth_basic “Administrator’s Area”;
+    #...
+}
+```
+
+Specify the auth_basic_user_file directive with a path to the .htpasswd file that contain user/password pairs:
+
+```console
+location /api {
+    auth_basic           “Administrator’s Area”;
+    auth_basic_user_file /etc/apache2/.htpasswd; 
+}
+```
+
+Alternatively, you you can limit access to the whole website with basic authentication but still make some website areas public. In this case, specify the off parameter of the auth_basic directive that cancels inheritance from upper configuration levels:
+
+```console
+server {
+    ...
+    auth_basic           "Administrator’s Area";
+    auth_basic_user_file conf/htpasswd;
+
+    location /public/ {
+        auth_basic off;
+    }
+}
+```
+
+## Basic Auth - Combining Basic Authentication with Access Restriction by IP Address
+
+HTTP basic authentication can be effectively combined with access restriction by IP address. You can implement at least two scenarios:
+    - a user must be both authenticated and have a valid IP address
+    - a user must be either authenticated, or have a valid IP address
+
+Allow or deny access from particular IP addresses with the allow and deny directives:
+
+```console
+location /api {
+    #...
+    deny  192.168.1.2;
+    allow 192.168.1.1/24;
+    allow 127.0.0.1;
+    deny  all;
+}
+```
+
+Access will be granted only for the 192.168.1.1/24 network excluding the 192.168.1.2 address. Note that the allow and deny directives will be applied in the order they are defined.
+
+Combine restriction by IP and HTTP authentication with the satisfy directive. If you set the directive to to all, access is granted if a client satisfies both conditions. If you set the directive to any, access is granted if if a client satisfies at least one condition:
+
+```console
+location /api {
+    #...
+    satisfy all;    
+
+    deny  192.168.1.2;
+    allow 192.168.1.1/24;
+    allow 127.0.0.1;
+    deny  all;
+
+    auth_basic           "Administrator’s Area";
+    auth_basic_user_file conf/htpasswd;
+}
+```
+
+## Basic Auth - Complete Example
+
+The example shows how to protect your status area with simple authentication combined with access restriction by IP address:
+
+```console
+http {
+    server {
+        listen 192.168.1.23:8080;
+        root   /usr/share/nginx/html;
+
+        location /api {
+            api;
+            satisfy all;
+
+            deny  192.168.1.2;
+            allow 192.168.1.1/24;
+            allow 127.0.0.1;
+            deny  all;
+
+            auth_basic           "Administrator’s Area";
+            auth_basic_user_file /etc/apache2/.htpasswd; 
+        }
+    }
+}
+```
+
 
 ## License
 
